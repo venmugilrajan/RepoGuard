@@ -1,5 +1,6 @@
-import type { Octokit } from "@octokit/rest";
-import { getGitHubApp } from "@/lib/github/app";
+import { createAppAuth } from "@octokit/auth-app";
+import { Octokit } from "@octokit/rest";
+import { getEnv, normalizePrivateKey } from "@/lib/env";
 
 export type InstallationAccount = {
   login: string;
@@ -40,13 +41,23 @@ export async function getInstallation(
   };
 }
 
+/**
+ * Installation-scoped Octokit from @octokit/rest (includes paginate).
+ * Do not use App#getInstallationOctokit — that client lacks paginate REST.
+ */
 export async function getInstallationOctokit(
   installationId: number,
 ): Promise<Octokit> {
-  const app = getGitHubApp();
-  return (await app.getInstallationOctokit(
-    installationId,
-  )) as unknown as Octokit;
+  const env = getEnv();
+
+  return new Octokit({
+    authStrategy: createAppAuth,
+    auth: {
+      appId: env.GITHUB_APP_ID,
+      privateKey: normalizePrivateKey(env.GITHUB_APP_PRIVATE_KEY),
+      installationId,
+    },
+  });
 }
 
 export async function listInstallationRepositories(
