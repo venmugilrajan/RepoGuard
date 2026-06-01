@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+// Connection URLs are configured in prisma.config.ts (Prisma 7).
+datasource db {
+  provider = "postgresql"
+}
+
+enum AccountType {
+  User
+  Organization
+}
+
+enum RepositorySelection {
+  all
+  selected
+}
+
+enum ScanTrigger {
+  installation
+  push
+  pull_request
+  repository_added
+  manual
+}
+
+enum ScanStatus {
+  queued
+  running
+  completed
+  failed
+}
+
+enum Severity {
+  Critical
+  High
+  Medium
+  Low
+}
+
+model User {
+  id           String   @id @default(cuid())
+  githubUserId BigInt   @unique
+  login        String
+  name         String?
+  email        String?
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Installation {
+  id                   String @id @default(cuid())
+  githubInstallationId BigInt @unique
+
+  accountLogin        String
+  accountType         AccountType
+  repositorySelection RepositorySelection
+
+  suspendedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  repositories Repository[]
+}
+
+model Repository {
+  id String @id @default(cuid())
+
+  githubRepoId         BigInt
+  githubInstallationId BigInt
+
+  installationId String
+  installation   Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  name      String
+  fullName  String
+  private   Boolean @default(false)
+
+  defaultBranch String?
+
+  securityScore Int @default(100)
+
+  lastScannedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scans     Scan[]
+  findings  Finding[]
+  checkRuns GitHubCheckRun[]
+
+  @@unique([githubInstallationId, githubRepoId])
+  @@index([installationId])
+  @@index([fullName])
+}
+
+model Scan {
+  id String @id @default(cuid())
+
+  githubInstallationId BigInt
+  githubRepoId         BigInt
+
+  repositoryId String?
+  repository   Repository? @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
+
+  repositoryFullName String
+
+  trigger ScanTrigger
+  status  ScanStatus @default(queued)
+
+  ref               String?
+  commitSha         String?
+  pullRequestNumber Int?
+
+  deliveryId String?
+
+  filesScanned Int @default(0)
+  secretsFound Int @default(0)
+  durationMs   Int?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  findings Finding[]
+
+  @@index([githubInstallationId, createdAt])
+  @@index([status])
+  @@index([repositoryId])
+}
+
+model Finding {
+  id String @id @default(cuid())
+
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  scanId String?
+  scan   Scan? @relation(fields: [scanId], references: [id], onDelete: SetNull)
+
+  filePath String
+  line     Int
+
+  secretType String
+
+  severity   Severity
+  confidence Float
+
+  fingerprint String
+  maskedValue String
+
+  resolved   Boolean @default(false)
+  resolvedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@unique([repositoryId, fingerprint])
+  @@index([repositoryId])
+  @@index([scanId])
+  @@index([severity])
+}
+
+model WebhookDelivery {
+  id String @id
+
+  event  String
+  action String?
+
+  githubInstallationId BigInt?
+
+  repositoryFullName String?
+
+  processed Boolean @default(false)
+
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
+}
+
+model GitHubCheckRun {
+  id String @id @default(cuid())
+
+  githubCheckRunId BigInt @unique
+
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  name       String
+  status     String
+  conclusion String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([repositoryId])
+}
